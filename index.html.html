@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Arctic Log Pro</title>
+    
+    <!-- 修正版 App 圖示：使用高相容高品質圖示 -->
+    <link rel="icon" type="image/png" href="https://img.icons8.com/fluency/180/snowflake.png">
+    <link rel="apple-touch-icon" href="https://img.icons8.com/fluency/180/snowflake.png">
+    <meta name="apple-mobile-web-app-title" content="ArcticLog">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+
+    <style>
+        :root {
+            --bg: #f8fafc;
+            --midnight: #0f172a; /* 側邊欄實色 */
+            --aurora: #2dd4bf;
+            --holiday-pink: #fca5a5;
+            --itinerary-bg: #e2e8f0; --itinerary-text: #475569;
+            --ice-1: #dbeafe; --ice-2: #bfdbfe; --ice-3: #93c5fd; --ice-4: #60a5fa;
+            --volcanic: #ef4444;
+            --text-main: #1e293b;
+            --text-faint: #94a3b8;
+            --sidebar-w: 80px;
+        }
+
+        * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; margin: 0; padding: 0; }
+        html, body { height: 100%; width: 100%; overflow: hidden; background: var(--bg); font-family: -apple-system, 'Inter', sans-serif; }
+        body { display: flex; position: relative; }
+
+        /* --- 側邊欄：單列顯示 --- */
+        .sidebar {
+            width: var(--sidebar-w); background: var(--midnight); color: white;
+            display: flex; flex-direction: column; padding: 15px 5px;
+            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1); 
+            z-index: 3000; position: fixed; top: 0; left: 0; bottom: 0;
+            transform: translateX(-100%); border-right: 1px solid rgba(255,255,255,0.1);
+        }
+        .sidebar.active { transform: translateX(0); }
+
+        .year-sel { background: #1e293b; border: 1px solid var(--aurora); color: white; padding: 6px; width: 100%; margin-bottom: 20px; border-radius: 6px; font-weight: bold; text-align: center; font-size: 0.8rem; outline: none; }
+        .month-list { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; }
+        .m-btn { padding: 14px 0; border: none; background: none; color: #64748b; font-weight: bold; cursor: pointer; border-radius: 6px; font-size: 0.85rem; flex-shrink: 0; transition: 0.2s; }
+        .m-btn.active { background: var(--aurora); color: var(--midnight); }
+
+        .sync-tools { margin-top: 15px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.1); display: flex; flex-direction: column; gap: 8px; }
+        .tool-btn { background: none; border: 1px solid var(--aurora); color: var(--aurora); padding: 8px 0; border-radius: 6px; font-size: 0.6rem; cursor: pointer; font-weight: bold; text-align: center; }
+
+        .overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: none; z-index: 2500; backdrop-filter: blur(2px); }
+        .overlay.active { display: block; }
+
+        /* --- 主內容區 --- */
+        .main { flex: 1; display: flex; flex-direction: column; height: 100%; width: 100%; position: relative; }
+        header { height: 55px; background: white; border-bottom: 1px solid #e2e8f0; display: flex; align-items: center; justify-content: space-between; padding: 0 10px; flex-shrink: 0; z-index: 1000; }
+        .header-left { display: flex; align-items: center; gap: 10px; }
+        .menu-btn { background: var(--midnight); color: var(--aurora); border: none; width: 36px; height: 36px; border-radius: 8px; font-size: 1.2rem; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+        .header-title { font-size: 0.85rem; font-weight: 800; letter-spacing: 1px; color: var(--midnight); white-space: nowrap; text-transform: uppercase; }
+
+        .header-right { display: flex; align-items: center; }
+        .search-box { position: relative; width: 100px; }
+        .search-input { width: 100%; padding: 6px 12px; border-radius: 20px; border: 1px solid #e2e8f0; background: #f1f5f9; outline: none; font-size: 0.75rem; transition: 0.3s; }
+        .search-input:focus { width: 140px; border-color: var(--aurora); background: white; }
+        .search-res { position: absolute; top: 40px; right: 0; width: 220px; background: white; border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.2); max-height: 250px; overflow-y: auto; display: none; z-index: 5000; border: 1px solid #eee; }
+
+        /* --- 月曆區格 (TimeTree 格式) --- */
+        .cal-container { flex: 1; display: flex; flex-direction: column; background: #e2e8f0; padding: 1px; overflow: hidden; touch-action: pan-y; }
+        .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); grid-template-rows: 25px repeat(6, 1fr); height: 100%; width: 100%; gap: 1px; }
+        .weekday { background: #f8fafc; text-align: center; line-height: 25px; font-size: 0.55rem; color: #94a3b8; font-weight: 800; text-transform: uppercase; }
+        .day { background: white; display: flex; flex-direction: column; padding: 2px; overflow: hidden; cursor: pointer; }
+        .day.other { opacity: 0.15; pointer-events: none; }
+
+        /* 日期、體重、小花精準排版 */
+        .day-top { display: flex; align-items: center; height: 16px; margin-bottom: 2px; padding: 0 1px; overflow: hidden; }
+        .d-num { font-size: 0.75rem; font-weight: 700; color: #475569; }
+        .d-num.holiday { color: var(--holiday-pink) !important; }
+        .w-num { font-size: 0.5rem; color: var(--text-faint); margin-left: 2px; }
+        .flower { font-size: 0.65rem; margin-left: auto; opacity: 0.05; flex-shrink: 0; }
+        .flower.active { opacity: 1; color: #ff8b94; }
+
+        .stack { display: flex; flex-direction: column; gap: 1px; pointer-events: none; }
+        .bar { font-size: 0.55rem; padding: 1px 3px; border-radius: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.1; font-weight: 500; }
+        .bar-it { background: var(--itinerary-bg); color: var(--itinerary-text); }
+        .bar-pain { background: var(--volcanic); color: white; font-weight: 800; }
+        .bar-med { background: var(--aurora); color: var(--midnight); }
+        .bar-st { background: #f1f5f9; color: var(--text-faint); font-size: 0.45rem; }
+
+        /* --- 編輯抽屜 --- */
+        .drawer { position: fixed; bottom: 0; left: 0; right: 0; background: white; border-radius: 24px 24px 0 0; box-shadow: 0 -5px 40px rgba(0,0,0,0.3); transform: translateY(100%); transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1); z-index: 4000; padding: 20px; max-height: 85vh; overflow-y: auto; }
+        .drawer.open { transform: translateY(0); }
+        .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
+        label { display: block; font-size: 0.7rem; font-weight: 800; color: #64748b; margin-bottom: 4px; }
+        input { width: 100%; padding: 12px; border: 1px solid #e2e8f0; border-radius: 8px; background: #f8fafc; font-size: 1rem; outline: none; }
+        .btn-save { background: var(--midnight); color: var(--aurora); border: none; padding: 18px; width: 100%; border-radius: 12px; font-size: 1.1rem; font-weight: 800; margin-top: 10px; cursor: pointer; }
+        .btn-p { width: 100%; padding: 12px; border-radius: 10px; border: 1px solid #fca5a5; color: #b91c1c; font-weight: bold; background: white; text-align: center; margin-bottom: 15px; cursor: pointer; }
+        .btn-p.active { background: #fee2e2; border-color: #ef4444; }
+
+        .search-item { padding: 12px 15px; border-bottom: 1px solid #f1f5f9; cursor: pointer; font-size: 0.8rem; line-height: 1.4; color: var(--text-main); }
+    </style>
+</head>
+<body>
+
+    <aside class="sidebar" id="sidebar">
+        <select class="year-sel" id="yearSel" onchange="changeYear(this.value)"></select>
+        <div class="month-list" id="monthList"></div>
+        <div class="sync-tools">
+            <button class="tool-btn" onclick="exportData()">匯出備份</button>
+            <button class="tool-btn" onclick="document.getElementById('importFile').click()">匯入資料</button>
+            <input type="file" id="importFile" style="display: none;" onchange="importData(event)">
+        </div>
+    </aside>
+
+    <div class="overlay" id="overlay" onclick="closeAll()"></div>
+
+    <div class="main">
+        <header>
+            <div class="header-left">
+                <button class="menu-btn" onclick="toggleSidebar()">☰</button>
+                <h1 class="header-title" id="headerTitle">JANUARY 2024</h1>
+            </div>
+            <div class="header-right">
+                <div class="search-box">
+                    <input type="text" class="search-input" id="searchInput" placeholder="Search..." oninput="doSearch(this.value)">
+                    <div class="search-res" id="searchRes"></div>
+                </div>
+            </div>
+        </header>
+        <div class="cal-container" id="swipeArea">
+            <div class="cal-grid" id="calendarGrid"></div>
+        </div>
+    </div>
+
+    <div class="drawer" id="drawer">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
+            <h2 id="editTitle" style="font-size: 1.1rem; font-weight: 800;">DATE</h2>
+            <button onclick="closeAll()" style="background:#f1f5f9; border:none; width:35px; height:35px; border-radius:50%; font-size:1rem;">✕</button>
+        </div>
+        <div class="btn-p" id="pBtn" onclick="toggleP()">生理期紀錄</div>
+        <div style="margin-bottom:12px;"><label>📍 行程紀錄</label><input type="text" id="in-it"></div>
+        <label>🍱 飲食紀錄 (純色呈現)</label>
+        <div class="row"><input type="text" id="in-b" placeholder="早"><input type="text" id="in-l" placeholder="午"></div>
+        <div class="row"><input type="text" id="in-d" placeholder="晚"><input type="text" id="in-s" placeholder="點"></div>
+        <div class="row">
+            <div><label>🤕 頭痛 (0-10)</label><input type="number" id="in-v" min="0" max="10"></div>
+            <div><label>😴 睡眠 (h)</label><input type="number" id="in-sl" step="0.5"></div>
+        </div>
+        <div class="row">
+            <div><label>💧 水量 (ml)</label><input type="number" id="in-w"></div>
+            <div><label>⚖️ 體重 (kg)</label><input type="number" id="in-wt" step="0.1"></div>
+        </div>
+        <div style="margin-bottom:12px;"><label>💊 藥物紀錄</label><input type="text" id="in-m"></div>
+        <button class="save-btn" onclick="save()">儲存今日日記 ✨</button>
+    </div>
+
+<script>
+    let cYear = new Date().getFullYear();
+    let cMonth = new Date().getMonth();
+    let selectedStr = "";
+    let dataStore = JSON.parse(localStorage.getItem('arctic_sync_v35') || '{}');
+    let holidayCache = {}; 
+    const monthsFull = ["JANUARY", "FEBRUARY", "MARCH", "APRIL", "MAY", "JUNE", "JULY", "AUGUST", "SEPTEMBER", "OCTOBER", "NOVEMBER", "DECEMBER"];
+    const monthsShort = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
+
+    window.onload = function() {
+        initYear();
+        updateMonthButtons();
+        render();
+        setupSwipe();
+        fetchHolidays(cYear);
+    };
+
+    function initYear() {
+        const sel = document.getElementById('yearSel');
+        sel.innerHTML = '';
+        const end = new Date().getFullYear() + 20;
+        for(let y=2020; y<=end; y++) {
+            sel.innerHTML += `<option value="${y}" ${y==cYear?'selected':''}>${y}</option>`;
+        }
+    }
+
+    function updateMonthButtons() {
+        const list = document.getElementById('monthList');
+        list.innerHTML = '';
+        monthsShort.forEach((m, i) => {
+            const btn = document.createElement('button');
+            btn.className = `m-btn ${i==cMonth?'active':''}`;
+            btn.innerText = m;
+            btn.onclick = () => { cMonth = i; updateMonthButtons(); render(); if(window.innerWidth < 1024) closeAll(); };
+            list.appendChild(btn);
+        });
+    }
+
+    function changeYear(y) { cYear = parseInt(y); render(); fetchHolidays(cYear); }
+
+    function fetchHolidays(year) {
+        fetch(`https://date.nager.at/api/v3/PublicHolidays/${year}/TW`)
+            .then(res => res.json())
+            .then(json => {
+                let hDay = {};
+                json.forEach(h => hDay[h.date] = true);
+                holidayCache[year] = hDay;
+                render(); 
+            }).catch(e => console.log("offline"));
+    }
+
+    function render() {
+        const grid = document.getElementById('calendarGrid');
+        if(!grid) return;
+        grid.innerHTML = '';
+        document.getElementById('headerTitle').innerText = `${monthsFull[cMonth]} ${cYear}`;
+
+        ["S","M","T","W","T","F","S"].forEach(w => grid.innerHTML += `<div class="weekday">${w}</div>`);
+
+        const first = new Date(cYear, cMonth, 1).getDay();
+        const days = new Date(cYear, cMonth + 1, 0).getDate();
+        const yearHolidays = holidayCache[cYear] || {};
+
+        for(let i=0; i<first; i++) grid.innerHTML += `<div class="day other"></div>`;
+
+        for(let d=1; d<=days; d++) {
+            const dateStr = `${cYear}-${String(cMonth+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+            const dData = dataStore[dateStr] || {};
+            const isHoliday = (new Date(cYear, cMonth, d).getDay() % 6 == 0 || yearHolidays[dateStr]);
+
+            const div = document.createElement('div');
+            div.className = 'day';
+            div.onclick = () => openEdit(dateStr);
+
+            let events = '';
+            if(dData.it) events += `<div class="bar bar-it">${dData.it}</div>`;
+            if(dData.b) events += `<div class="bar" style="background:var(--ice-1)">${dData.b}</div>`;
+            if(dData.l) events += `<div class="bar" style="background:var(--ice-2)">${dData.l}</div>`;
+            if(dData.d) events += `<div class="bar" style="background:var(--ice-3);color:white">${dData.d}</div>`;
+            if(dData.s) events += `<div class="bar" style="background:var(--ice-4);color:white">${dData.s}</div>`;
+            if(dData.v > 0) events += `<div class="bar bar-pain">⚡ ${dData.v}</div>`;
+            if(dData.m) events += `<div class="bar bar-med">💊 ${dData.m}</div>`;
+            if(dData.w || dData.sl) events += `<div class="bar bar-st">💧${dData.w||0} 😴${dData.sl||0}</div>`;
+
+            div.innerHTML = `
+                <div class="day-top">
+                    <span class="d-num ${isHoliday?'holiday':''}">${d}</span>
+                    <span class="w-num">${dData.wt || ''}</span>
+                    <span class="flower ${dData.p?'active':''}">🌸</span>
+                </div>
+                <div class="stack">${events}</div>
+            `;
+            grid.appendChild(div);
+        }
+    }
+
+    function openEdit(dStr) {
+        selectedStr = dStr;
+        document.getElementById('editTitle').innerText = dStr;
+        const dD = dataStore[dStr] || {severity:0, water:2000, sleep:7};
+        document.getElementById('in-it').value = dD.it || '';
+        document.getElementById('in-b').value = dD.b || '';
+        document.getElementById('in-l').value = dD.l || '';
+        document.getElementById('in-d').value = dD.d || '';
+        document.getElementById('in-s').value = dD.s || '';
+        document.getElementById('in-v').value = dD.v || 0;
+        document.getElementById('in-sl').value = dD.sl || 7;
+        document.getElementById('in-w').value = dD.w || 2000;
+        document.getElementById('in-wt').value = dD.wt || '';
+        document.getElementById('in-m').value = dD.m || '';
+        document.getElementById('pBtn').className = `btn-p ${dD.p?'active':''}`;
+        document.getElementById('drawer').classList.add('open');
+        document.getElementById('overlay').classList.add('active');
+    }
+
+    function save() {
+        dataStore[selectedStr] = {
+            it: document.getElementById('in-it').value, b: document.getElementById('in-b').value,
+            l: document.getElementById('in-l').value, d: document.getElementById('in-d').value,
+            s: document.getElementById('in-s').value, v: document.getElementById('in-v').value,
+            sl: document.getElementById('in-sl').value, w: document.getElementById('in-w').value,
+            wt: document.getElementById('in-wt').value, m: document.getElementById('in-m').value,
+            p: document.getElementById('pBtn').classList.contains('active')
+        };
+        localStorage.setItem('arctic_sync_v35', JSON.stringify(dataStore));
+        closeAll(); render();
+    }
+
+    function exportData() {
+        const blob = new Blob([JSON.stringify(dataStore)], { type: "application/json" });
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = `diary_backup_${new Date().toISOString().split('T')[0]}.json`;
+        a.click();
+    }
+
+    function importData(e) {
+        const reader = new FileReader();
+        reader.onload = (event) => {
+            if(confirm("匯入將覆蓋目前資料，確定嗎？")) {
+                dataStore = JSON.parse(event.target.result);
+                localStorage.setItem('arctic_sync_v35', JSON.stringify(dataStore));
+                render(); alert("同步完成！");
+            }
+        };
+        reader.readAsText(e.target.files[0]);
+    }
+
+    function doSearch(q) {
+        const res = document.getElementById('searchRes');
+        if(!q) { res.style.display = 'none'; return; }
+        let html = '';
+        Object.keys(dataStore).forEach(date => {
+            const d = dataStore[date];
+            if(`${d.it} ${d.b} ${d.l} ${d.d} ${d.s} ${d.m}`.toLowerCase().includes(q.toLowerCase())) {
+                html += `<div class="search-item" onclick="jumpToDate('${date}')"><b>${date}</b>: ${d.it||'記錄'}</div>`;
+            }
+        });
+        res.innerHTML = html || '<div class="search-item">無符合結果</div>';
+        res.style.display = 'block';
+    }
+
+    function jumpToDate(date) {
+        const p = date.split('-');
+        cYear = parseInt(p[0]); cMonth = parseInt(p[1]) - 1;
+        document.getElementById('yearSel').value = cYear;
+        updateMonthButtons(); render(); openEdit(date);
+        document.getElementById('searchRes').style.display = 'none';
+        document.getElementById('searchInput').value = '';
+    }
+
+    function setupSwipe() {
+        let startX = 0;
+        const el = document.getElementById('swipeArea');
+        el.addEventListener('touchstart', e => startX = e.touches[0].clientX);
+        el.addEventListener('touchend', e => {
+            const diff = startX - e.changedTouches[0].clientX;
+            if(Math.abs(diff) > 70) {
+                cMonth += (diff > 0 ? 1 : -1);
+                if(cMonth > 11) { cMonth=0; cYear++; initYear(); }
+                if(cMonth < 0) { cMonth=11; cYear--; initYear(); }
+                updateMonthButtons(); render();
+            }
+        });
+    }
+
+    function toggleSidebar() { document.getElementById('sidebar').classList.toggle('active'); document.getElementById('overlay').classList.toggle('active'); }
+    function closeAll() { document.getElementById('drawer').classList.remove('open'); document.getElementById('sidebar').classList.remove('active'); document.getElementById('overlay').classList.remove('active'); document.getElementById('searchRes').style.display = 'none'; }
+    function toggleP() { document.getElementById('pBtn').classList.toggle('active'); }
+</script>
+</body>
+</html>
